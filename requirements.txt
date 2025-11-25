@@ -1,0 +1,5 @@
+# Journal Bot Dependencies
+# Pinned versions for production stability
+
+python-telegram-bot==20.6
+telegramify-markdown>=0.1.0
