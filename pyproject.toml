@@ -1,6 +1,6 @@
 [project]
 name = "journal-bot"
-version = "1.0.0"
+version = "1.1.0"
 description = "A Telegram bot connecting a Git-backed journal to Claude AI CLI"
 readme = "README.md"
 license = "MIT"

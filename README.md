@@ -79,7 +79,7 @@ cd ~
    ```bash
    # Telegram Secrets
    TELEGRAM_TOKEN=your_actual_bot_token_here
-   ALLOWED_USER_ID=8218835077  # Already configured for you
+   ALLOWED_USER_ID=your_telegram_user_id_here
 
    # Anthropic Authentication (choose one method)
    # OPTION 1: Use subscription (recommended) - leave API key commented out

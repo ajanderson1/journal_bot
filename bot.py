@@ -5,7 +5,7 @@ This bot enables natural language queries against a personal journal repository
 using Claude Code CLI, with automatic Git synchronization and message retention.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "AJ Anderson"
 
 import os
