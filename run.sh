@@ -50,7 +50,6 @@ docker run -d \
   -v ~/.gitconfig:/home/botuser/.gitconfig:ro \
   -v ~/.claude:/home/botuser/.claude \
   -v "$BOT_DATA_DIR":/app/data \
-  -v "$(pwd)/.claude":/Journal/.claude:ro \
   journal-bot
 
 # 6. Post-Launch Verification
