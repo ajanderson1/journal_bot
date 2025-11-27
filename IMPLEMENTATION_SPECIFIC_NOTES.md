@@ -2,7 +2,7 @@
 
 ## Git Sync Strategy
 
-The bot syncs the journal repository using `commit-and-sync.sh` with a configurable schedule.
+The bot syncs the journal repository using `commit-and-sync.sh` (v1.1.0) with a configurable schedule.
 
 ### Sync Modes
 
@@ -17,14 +17,45 @@ Controlled by `JOURNAL_SYNC_MODE` environment variable:
 
 **Auto mode** ensures the journal is always current before Claude reads it, and changes are pushed immediately after.
 
-### Primary: `commit-and-sync.sh` Script
+### Primary: `commit-and-sync.sh` Script (v1.1.0)
 
 Located at `/Journal/_/scripts/commit-and-sync.sh`, this script performs a full git workflow:
 
-1. `git add -A` - Stage all changes
-2. `git commit` - Commit with AI-generated message via Claude
-3. `git pull --rebase` - Pull remote changes
-4. `git push` - Push to remote
+**Phase 0: Initialization**
+- Parse CLI arguments (`--dry-run`, `--help`, `--version`)
+- Rotate log file if >1000 lines (keeps last 500)
+- Detect and clean up stale rebase state from crashed syncs
+- Configure git for optimal auto-resolution (rerere, autostash, etc.)
+- Verify on a branch (not detached HEAD)
+
+**Phase 1: Stage**
+- `git add -A` - Stage all changes
+
+**Phase 2: Commit**
+- Generate commit message via Claude CLI (30s timeout)
+- Fallback message: `vault backup: YYYY-MM-DD HH:MM:SS`
+
+**Phase 3: Pull + Rebase + Auto-Resolution**
+- `git pull --rebase` with network retry (3 attempts, exponential backoff)
+- Auto-resolve conflicts by file type:
+  - `*.md` files → Union merge (preserve both sides)
+  - `.obsidian/*` → Keep LOCAL (ours)
+  - All other files → Keep REMOTE (theirs)
+- Continue rebase after resolution (up to 3 conflict rounds)
+
+**Phase 4: Push**
+- `git push` with network retry
+
+### Script Options
+
+```bash
+./_/scripts/commit-and-sync.sh [OPTIONS]
+
+Options:
+  -n, --dry-run    Show what would be executed without making changes
+  -h, --help       Display help message
+  -v, --version    Display version (1.1.0)
+```
 
 ### Fallback: Simple `git pull`
 
@@ -35,6 +66,7 @@ Fallback triggers:
 - Script not executable
 - Script times out (120s limit)
 - Script returns non-zero exit code
+- Unresolvable conflicts (script exits with code 1)
 
 ### Configuration
 
@@ -43,13 +75,23 @@ Fallback triggers:
 | `JOURNAL_SYNC_MODE` | `auto` | `auto` or minutes interval |
 | `JOURNAL_SYNC_SCRIPT` | `/Journal/_/scripts/commit-and-sync.sh` | Path to sync script |
 
-Internal timeouts:
-- Script timeout: 120 seconds (longer due to Claude commit message generation)
+**Script internal settings:**
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Claude timeout | 30s | Max wait for AI commit message |
+| Network retries | 3 | Attempts with exponential backoff |
+| Log rotation | 1000 lines | Rotates when exceeded, keeps 500 |
+| Conflict rounds | 3 | Max rebase conflict resolution attempts |
+
+**Bot-side timeouts:**
+- Script timeout: 120 seconds
 - Fallback timeout: 30 seconds
 
 ### Diagnostics
 
 The `/start` and `/health` commands show sync script availability and current sync mode.
+
+The script writes to `/_/scripts/sync.log` with timestamped entries for each operation.
 
 ## Telegram Message Formatting
 

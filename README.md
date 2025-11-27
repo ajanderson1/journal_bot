@@ -33,8 +33,9 @@ docker exec -it journal-bot claude /login
 - **Session Mode**: Enable multi-turn conversations with persistent context (set `MESSAGE_SESSION=true`, configurable expiry via `MESSAGE_SESSION_EXPIRY`)
 
 ### Sync Options
-- **Auto Sync** (default): Commits and syncs before/after each query
-- **Timer Sync**: Background sync at configurable intervals (set `JOURNAL_SYNC_MODE` to minutes)
+- **Auto Sync** (default): Syncs before/after each query
+- **Timer Sync**: Background sync at intervals (set `JOURNAL_SYNC_MODE` to minutes)
+- **Custom Script**: Place executable at `~/Journal/_/scripts/commit-and-sync.sh` for custom sync behavior
 
 ### Operations
 - **Health Monitoring**: Built-in diagnostics via `/health` command
@@ -43,10 +44,13 @@ docker exec -it journal-bot claude /login
 
 ## Prerequisites
 
-- Raspberry Pi with Docker installed
-- Git repository containing your journal at `~/Journal`
-- Telegram account
-- Anthropic subscription (Pro/Team/Max) OR API key
+- **Docker** installed and running
+- **Git repository** at `~/Journal` with:
+  - A configured remote (e.g., `origin`)
+  - SSH authentication set up (keys in `~/.ssh`)
+- **Git identity** configured (`~/.gitconfig` with user.name and user.email)
+- **Telegram account** and bot token from @BotFather
+- **Anthropic subscription** (Pro/Team/Max) OR API key
 
 ## Setup Instructions
 
@@ -81,19 +85,25 @@ cd ~
    TELEGRAM_TOKEN=your_actual_bot_token_here
    ALLOWED_USER_ID=your_telegram_user_id_here
 
-   # Anthropic Authentication (choose one method)
-   # OPTION 1: Use subscription (recommended) - leave API key commented out
-   # OPTION 2: Use API key - uncomment and add your API key
+   # Anthropic API Key (optional - only if NOT using subscription login)
+   # If you have a Pro/Team/Max subscription, leave this commented out
+   # and use the manual login method below instead.
    # ANTHROPIC_API_KEY=sk-ant-api03-your_actual_key_here
    ```
 
+   > **Note:** `ALLOWED_USER_ID` accepts a single user ID. Multi-user access is not currently supported.
+
 2. **Authenticate with Claude Code CLI** (subscription users):
+
+   **Important:** If you use an Anthropic subscription (Pro/Team/Max), you must manually authenticate inside the container. This step is required **every time the container is rebuilt**:
    ```bash
    # After starting the container, login inside it:
    docker exec -it journal-bot claude /login
    # Complete the browser authentication process
    # Credentials persist in ~/.claude/ (mounted volume)
    ```
+
+   > **Note:** The `~/.claude` directory is mounted as a volume, so credentials persist across container restarts. However, if you rebuild the image or delete the container, you'll need to re-authenticate.
 
 ### 4. Deployment
 
@@ -188,6 +198,14 @@ Send `/health` command to re-run diagnostics anytime.
 - **Read-only Mounts**: SSH keys and git config are mounted read-only
 - **Container Isolation**: All operations happen within Docker container
 
+## Limitations
+
+- **Single user**: One Telegram user ID only
+- **Response length**: Truncated at ~4000 characters
+- **Query timeout**: 120 seconds per query
+- **Git auth**: SSH keys only (no HTTPS password)
+- **Ownership**: Won't run if `~/Journal` is owned by root
+
 ## File Structure
 
 ```
@@ -205,3 +223,23 @@ Send `/health` command to re-run diagnostics anytime.
 - **Monitor logs**: `docker logs journal-bot`
 - **Restart bot**: Re-run `./run.sh`
 - **Update Claude CLI**: Rebuild Docker image to get latest version
+
+## Changelog
+
+### v1.2.0 (2025-11-27)
+- Streamlined Docker volume mounts (removed unnecessary `.claude` mount from `run.sh`)
+- Minor documentation updates
+
+### v1.1.0 (2025-11-27)
+- Added entrypoint script for improved container initialization
+- Enhanced `run.sh` with better user ID handling and logging
+- Added OCI image labels to Dockerfile
+- Configurable user ID support for permission management
+
+### v1.0.0 (2025-11-27)
+- Initial release
+- Telegram bot with Claude AI integration
+- Git-backed journal synchronization
+- Auto-deletion of messages after 24 hours
+- Session mode for multi-turn conversations
+- User whitelist security

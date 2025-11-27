@@ -5,7 +5,7 @@ This bot enables natural language queries against a personal journal repository
 using Claude Code CLI, with automatic Git synchronization and message retention.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "AJ Anderson"
 
 import os
@@ -51,6 +51,11 @@ AUDIT_LOG_PATH = Path("/app/data/audit.log")  # Persistent audit log (mounted vo
 # Session feature - enables multi-turn conversations with Claude
 MESSAGE_SESSION = os.getenv("MESSAGE_SESSION", "false").lower() == "true"
 MESSAGE_SESSION_EXPIRY = float(os.getenv("MESSAGE_SESSION_EXPIRY", "1"))  # Hours
+
+# Read-only mode - restricts Claude to read-only tools and disables journal writes
+READ_ONLY = os.getenv("READ_ONLY", "false").lower() == "true"
+# Tools allowed in read-only mode (Claude CLI --allowedTools format)
+READONLY_TOOLS = "Read,Glob,Grep,LS,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*)"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -258,6 +263,12 @@ def run_diagnostic():
     else:
         results.append(f"🔄 Sync: every {JOURNAL_SYNC_INTERVAL} minutes")
 
+    # Test 6: Read-only mode
+    if READ_ONLY:
+        results.append("🔒 Mode: READ-ONLY (no writes allowed)")
+    else:
+        results.append("📝 Mode: READ-WRITE")
+
     return "\n".join(results)
 
 async def sync_repo(context=None, chat_id=None, silent=False):
@@ -278,7 +289,27 @@ async def sync_repo(context=None, chat_id=None, silent=False):
             warning_msg = await context.bot.send_message(chat_id=chat_id, text=msg)
             track_message(chat_id, warning_msg.message_id)
 
-    # Try the commit-and-sync script first
+    # Read-only mode: only git pull, skip commit-and-sync script
+    if READ_ONLY:
+        try:
+            logger.info("Read-only mode: running git pull only")
+            result = subprocess.run(
+                ["git", "pull"],
+                cwd=JOURNAL_PATH,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            logger.info(f"Git pull (read-only): returncode={result.returncode}, stdout={result.stdout.strip()}")
+            if result.returncode != 0 and "Already up to date" not in result.stdout:
+                await send_warning(f"⚠️ Git Pull Warning:\n{result.stderr}")
+            return True
+        except Exception as e:
+            logger.error(f"Git pull failed in read-only mode: {e}")
+            await send_warning(f"⚠️ Git Error: {str(e)}")
+            return False
+
+    # Try the commit-and-sync script first (read-write mode)
     if os.path.exists(JOURNAL_SYNC_SCRIPT) and os.access(JOURNAL_SYNC_SCRIPT, os.X_OK):
         try:
             logger.info("Running journal sync script...")
@@ -462,19 +493,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Check for active session (if sessions enabled)
         active_session = get_active_session(user.id)
 
-        # Build command based on session state
+        # Build command based on session state and read-only mode
+        # In read-only mode: use --allowedTools to restrict Claude (no --dangerously-skip-permissions)
+        # In read-write mode: use --dangerously-skip-permissions for unattended operation
         if MESSAGE_SESSION:
             if active_session:
                 # Resume existing session (no -p flag - query passed as positional arg)
-                cmd = ["claude", "--resume", active_session, user_query, "--output-format", "json", "--dangerously-skip-permissions"]
+                cmd = ["claude", "--resume", active_session, user_query, "--output-format", "json"]
                 logger.info(f"Resuming session {active_session[:8]}... for user {user.id}")
             else:
                 # Start new session
-                cmd = ["claude", "-p", user_query, "--output-format", "json", "--dangerously-skip-permissions"]
+                cmd = ["claude", "-p", user_query, "--output-format", "json"]
                 logger.info(f"Starting new session for user {user.id}")
         else:
             # Sessions disabled - original behavior
-            cmd = ["claude", "-p", user_query, "--dangerously-skip-permissions"]
+            cmd = ["claude", "-p", user_query]
+
+        # Apply permission mode based on read-only setting
+        if READ_ONLY:
+            cmd.extend(["--allowedTools", READONLY_TOOLS])
+            logger.info(f"Read-only mode: restricting Claude to tools: {READONLY_TOOLS}")
+        else:
+            cmd.append("--dangerously-skip-permissions")
+            logger.info("Read-write mode: using --dangerously-skip-permissions")
 
         logger.info(f"Starting Claude query: length={len(user_query)} chars")  # Log query start
 
@@ -545,10 +586,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                   response_length=len(output),
                   execution_time_sec=round(execution_time, 2),
                   status="success",
-                  exit_code=process.returncode)
+                  exit_code=process.returncode,
+                  read_only=READ_ONLY)
 
-        # Post-query sync: commit and push any changes Claude may have made (only in auto mode)
-        if JOURNAL_SYNC_MODE == "auto":
+        # Post-query sync: commit and push any changes Claude may have made (only in auto mode, skip in read-only)
+        if JOURNAL_SYNC_MODE == "auto" and not READ_ONLY:
             await sync_repo(context, update.effective_chat.id, silent=True)
 
     except Exception as e:
@@ -571,7 +613,7 @@ if __name__ == '__main__':
     print("---------------------------")
 
     # Log startup event
-    audit_log("STARTUP", 0, None, message="Bot started")
+    audit_log("STARTUP", 0, None, message="Bot started", read_only=READ_ONLY)
 
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
@@ -598,4 +640,8 @@ if __name__ == '__main__':
         logger.info(f"💬 Session mode enabled: {MESSAGE_SESSION_EXPIRY}h expiry")
     else:
         logger.info("💬 Session mode disabled (single-shot queries)")
+    if READ_ONLY:
+        logger.info("🔒 Read-only mode: ENABLED (Claude restricted to read-only tools)")
+    else:
+        logger.info("📝 Read-write mode: enabled")
     application.run_polling()

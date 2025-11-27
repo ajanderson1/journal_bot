@@ -6,7 +6,16 @@ BOT_USER="botuser"
 BOT_GROUP="botuser"
 BOT_HOME="/home/botuser"
 
+# Check read-only mode from environment
+READ_ONLY=${READ_ONLY:-false}
+READ_ONLY=$(echo "$READ_ONLY" | tr '[:upper:]' '[:lower:]')
+
 echo "=== Journal Bot Entrypoint ==="
+if [ "$READ_ONLY" = "true" ]; then
+    echo "Mode: READ-ONLY (journal writes disabled)"
+else
+    echo "Mode: READ-WRITE"
+fi
 
 # Detect host UID/GID from mounted volume
 if [ -d "$VOLUME_PATH" ]; then
@@ -97,7 +106,12 @@ verify_access() {
     fi
 }
 
-verify_access "/Journal" "RW" "/Journal"
+# Verify journal access based on mode
+if [ "$READ_ONLY" = "true" ]; then
+    verify_access "/Journal" "RO" "/Journal (read-only mode)"
+else
+    verify_access "/Journal" "RW" "/Journal"
+fi
 verify_access "/app/data" "RW" "/app/data (audit logs)"
 verify_access "$BOT_HOME/.claude" "RW" "~/.claude"
 verify_access "$BOT_HOME/.ssh" "RO" "~/.ssh"

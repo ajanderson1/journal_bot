@@ -3,7 +3,7 @@ FROM python:3.11-slim
 # OCI Image Labels
 LABEL org.opencontainers.image.title="Journal Bot"
 LABEL org.opencontainers.image.description="A Telegram bot connecting a Git-backed journal to Claude AI CLI"
-LABEL org.opencontainers.image.version="1.1.0"
+LABEL org.opencontainers.image.version="1.2.0"
 LABEL org.opencontainers.image.authors="AJ Anderson"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/ajanderson/journal-bot"
